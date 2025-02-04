@@ -12,6 +12,13 @@ movies_path = os.path.join(data_dir, 'movies.csv')
 ratings = pd.read_csv(ratings_path)
 movies = pd.read_csv(movies_path, encoding='utf-8')
 
+# Criar DataFrame de utilizadores a partir do ficheiro ratings.csv
+users_df = pd.DataFrame({'userId': ratings['userId'].unique()})
+users_df['username'] = users_df['userId'].apply(lambda x: f"User{x}")  # Placeholder para nomes
+
+# Contar número de utilizadores únicos
+num_users = users_df['userId'].max()  # Obtém o maior ID de utilizador existente
+
 # Função para corrigir título dos filmes
 def correct_movie_title(title):
     if title.endswith(', The'):
@@ -22,24 +29,30 @@ def correct_movie_title(title):
 
 # Aplicar a correção ao título dos filmes
 movies['title'] = movies['title'].apply(correct_movie_title)
+
 # Função para login ou criação de conta
 def user_login(users_df):
-
     username = input("Por favor, insira o seu nome de utilizador: ")
     
+    #pd.set_option('display.max_rows', None)
+
+    # Print completo
+    #print(users_df)
+
+    # (Opcional) Resetar a opção para evitar problemas futuros
+    #pd.reset_option('display.max_rows')
+
+
     if username in users_df['username'].values:
         print(f"Bem-vindo de volta, {username}!")
-        user_id = users_df[users_df['username'] == username]['userId'].values[0]
+        user_id = users_df.loc[users_df['username'] == username, 'userId'].values[0]
     else:
         print("Novo utilizador! Vamos criar a sua conta.")
-        user_id = len(users_df) + 1
-        
-        # Usar pd.concat para adicionar o novo utilizador
+        user_id = num_users + 1  # Obtém novo ID baseado no maior ID atual
         new_user = pd.DataFrame({'userId': [user_id], 'username': [username]})
         users_df = pd.concat([users_df, new_user], ignore_index=True)
-        
         print(f"Conta criada para {username}. Seu ID de utilizador é {user_id}.")
-    
+
     return user_id, users_df
 
 # Função para obter avaliações iniciais com base em géneros
@@ -97,6 +110,7 @@ def recommend_movies(user_id, user_similarity, user_movie_matrix, movies, top_n=
 
 # Função para mostrar avaliações do utilizador
 def show_user_ratings(user_id, ratings_df, movies):
+    print(f"USER_ID: {user_id}")
     print("\nSuas avaliações:")
     user_ratings = ratings_df[ratings_df['userId'] == user_id]
     for _, row in user_ratings.iterrows():
@@ -115,8 +129,13 @@ def user_interaction(user_id, ratings_df, movies):
         choice = input("Escolha uma opção (1/2/3/4): ")
         
         if choice == '1':
-            # Criar matriz User x Movie e calcular similaridade de cosseno
+            # 🔹 Corrigir duplicatas antes de criar a matriz User x Movie
+            ratings_df = ratings_df.groupby(['userId', 'movieId'], as_index=False).agg({'rating': 'mean'})
+
+            # Criar matriz User x Movie
             user_movie_matrix = ratings_df.pivot(index='userId', columns='movieId', values='rating').fillna(0)
+            
+            # Calcular similaridade de cosseno
             user_similarity = cosine_similarity(user_movie_matrix)
             
             # Gerar recomendações
@@ -132,17 +151,23 @@ def user_interaction(user_id, ratings_df, movies):
             movie_name = input("Digite o nome do filme que deseja avaliar: ")
             movie = movies[movies['title'].str.contains(movie_name, case=False)]
             if not movie.empty:
-                rating = input(f"Filme encontrado: {movie.iloc[0]['title']} - Nota (1 a 5): ")
-                if rating.isdigit() and int(rating) > 0 and int(rating) <= 5:
-                    # Usar pd.concat para adicionar a avaliação
-                    ratings_df = pd.concat([ratings_df, pd.DataFrame({
-                        'userId': [user_id],
-                        'movieId': [movie.iloc[0]['movieId']],
-                        'rating': [int(rating)]
-                    })], ignore_index=True)
-                    print(f"Avaliação registrada para o filme: {movie.iloc[0]['title']}")
-                else:
-                    print("Nota inválida.")
+                while True:  # Loop para garantir que a nota seja válida
+                    rating = input(f"Filme encontrado: {movie.iloc[0]['title']} - Nota (1 a 5): ")
+
+                    # Verifica se a nota é válida
+                    if rating.isdigit() and int(rating) > 0 and int(rating) <= 5:
+                        # Adicionar avaliação
+                        new_rating = pd.DataFrame({
+                            'userId': [user_id],
+                            'movieId': [movie.iloc[0]['movieId']],
+                            'rating': [int(rating)]
+                        })
+                        ratings_df = pd.concat([ratings_df, new_rating], ignore_index=True)
+                        print(f"Avaliação registrada para o filme: {movie.iloc[0]['title']}")
+                        break  # Sai do loop após inserir a avaliação
+
+                    else:
+                        print("Nota inválida. Por favor, insira uma nota entre 1 e 5.")
             else:
                 print("Filme não encontrado.")
         
@@ -152,16 +177,11 @@ def user_interaction(user_id, ratings_df, movies):
         else:
             print("Opção inválida. Tente novamente.")
 
-# Inicializar o dataframe de utilizadores
-users_df = pd.DataFrame(columns=['userId', 'username'])
-
 # Execução do sistema:
-
-# Login ou criação de conta
 user_id, users_df = user_login(users_df)
 
-# Se for um novo utilizador, pedimos avaliações
-if user_id == len(users_df):  # Novo utilizador
+# Se for um novo utilizador, pedir avaliações
+if user_id > num_users:
     ratings, rated_movies = get_genre_based_ratings(user_id, movies, ratings)
 
 # Interação contínua
