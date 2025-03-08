@@ -7,6 +7,7 @@ import os
 data_dir = 'data/'
 ratings_path = os.path.join(data_dir, 'ratings.csv')
 movies_path = os.path.join(data_dir, 'movies.csv')
+users_path = os.path.join(data_dir, 'users.csv')
 
 # Carregar os dados
 ratings = pd.read_csv(ratings_path)
@@ -15,6 +16,13 @@ movies = pd.read_csv(movies_path, encoding='utf-8')
 # Criar DataFrame de utilizadores a partir do ficheiro ratings.csv
 users_df = pd.DataFrame({'userId': ratings['userId'].unique()})
 users_df['username'] = users_df['userId'].apply(lambda x: f"User{x}")  # Placeholder para nomes
+
+if os.path.exists(users_path):
+    users_df = pd.read_csv(users_path, encoding='utf-8-sig')
+else:
+    # Se não existir, cria uma estrutura inicial baseada no ratings.csv
+    users_df = pd.DataFrame({'userId': ratings['userId'].unique()})
+    users_df['username'] = users_df['userId'].apply(lambda x: f"User{x}")  # Placeholder
 
 # Contar número de utilizadores únicos
 num_users = users_df['userId'].max()  # Obtém o maior ID de utilizador existente
@@ -33,25 +41,17 @@ movies['title'] = movies['title'].apply(correct_movie_title)
 # Função para login ou criação de conta
 def user_login(users_df):
     username = input("Por favor, insira o seu nome de utilizador: ")
-    
-    #pd.set_option('display.max_rows', None)
-
-    # Print completo
-    #print(users_df)
-
-    # (Opcional) Resetar a opção para evitar problemas futuros
-    #pd.reset_option('display.max_rows')
-
 
     if username in users_df['username'].values:
         print(f"Bem-vindo de volta, {username}!")
         user_id = users_df.loc[users_df['username'] == username, 'userId'].values[0]
     else:
         print("Novo utilizador! Vamos criar a sua conta.")
-        user_id = num_users + 1  # Obtém novo ID baseado no maior ID atual
+        user_id = num_users + 1  
         new_user = pd.DataFrame({'userId': [user_id], 'username': [username]})
         users_df = pd.concat([users_df, new_user], ignore_index=True)
         print(f"Conta criada para {username}. Seu ID de utilizador é {user_id}.")
+        users_df.to_csv(users_path, index=False, encoding='utf-8-sig')
 
     return user_id, users_df
 
@@ -129,16 +129,14 @@ def user_interaction(user_id, ratings_df, movies):
         choice = input("Escolha uma opção (1/2/3/4): ")
         
         if choice == '1':
-            # 🔹 Corrigir duplicatas antes de criar a matriz User x Movie
+            
             ratings_df = ratings_df.groupby(['userId', 'movieId'], as_index=False).agg({'rating': 'mean'})
 
-            # Criar matriz User x Movie
             user_movie_matrix = ratings_df.pivot(index='userId', columns='movieId', values='rating').fillna(0)
             
             # Calcular similaridade de cosseno
             user_similarity = cosine_similarity(user_movie_matrix)
             
-            # Gerar recomendações
             recommendations = recommend_movies(user_id, user_similarity, user_movie_matrix, movies)
             print("\nTop 3 filmes recomendados:")
             for movie in recommendations:
@@ -172,6 +170,7 @@ def user_interaction(user_id, ratings_df, movies):
                 print("Filme não encontrado.")
         
         elif choice == '4':
+            ratings_df.to_csv(ratings_path, index=False)
             print("Saindo...")
             break
         else:
